@@ -21,8 +21,25 @@ CLOUD_TOPIC="${CLOUD_TOPIC:-/map_scan}"
 TF_CHILD_FRAME="${TF_CHILD_FRAME:-aft_mapped}"
 
 # Sensor selection: which Voxel-SLAM launch file to use.
-# avia | avia_fly | mid360 | hesai | ouster | velodyne
+# avia | avia_fly | mid360 | hesai | ouster | velodyne | livox_pc2
+#   livox_pc2 = Livox scans exported as sensor_msgs/PointCloud2 (e.g. Bunker DVI)
 SENSOR="${SENSOR:-avia}"
+
+# Launch RViz inside the SLAM pane (0/1). RViz is the live view of how the
+# algorithm performs on the dataset, so it is ON by default. The required
+# VoxelSLAMPointCloud2 display plugin is built into the image.
+USE_RVIZ="${USE_RVIZ:-1}"
+
+# Force Mesa software rendering (llvmpipe) by default so RViz renders even when
+# the host GPU driver is not exposed to the container (the libGL
+# "failed to load driver: nvidia-drm" case). Set LIBGL_SW=0 to use host GL
+# (e.g. when running the container with --gpus all / nvidia-container-toolkit).
+LIBGL_SW="${LIBGL_SW:-1}"
+if [[ "$LIBGL_SW" == "1" ]]; then
+  LIBGL_ENV="1"
+else
+  LIBGL_ENV=""
+fi
 
 usage() {
   echo "Usage:"
@@ -82,8 +99,9 @@ case "$SENSOR" in
   hesai)    LAUNCH_FILE="vxlm_hesai.launch";    CFG_LIDAR="/hesai/pandar";         CFG_IMU="/alphasense/imu" ;;
   ouster)   LAUNCH_FILE="vxlm_ouster.launch";   CFG_LIDAR="/os1_cloud_node/points"; CFG_IMU="/os1_cloud_node/imu" ;;
   velodyne) LAUNCH_FILE="vxlm_velodyne.launch"; CFG_LIDAR="/velodyne_points";      CFG_IMU="/imu/data" ;;
+  livox_pc2) LAUNCH_FILE="vxlm_livox_pc2.launch"; CFG_LIDAR="/livox/pointcloud";   CFG_IMU="/livox/imu" ;;
   *)
-    echo "Error: unknown SENSOR=$SENSOR (use avia|avia_fly|mid360|hesai|ouster|velodyne)"
+    echo "Error: unknown SENSOR=$SENSOR (use avia|avia_fly|mid360|hesai|ouster|velodyne|livox_pc2)"
     exit 1
     ;;
 esac
@@ -91,6 +109,9 @@ esac
 # Bag-side topic names (default to the config topics → no remap needed)
 LIDAR_TOPIC="${LIDAR_TOPIC:-$CFG_LIDAR}"
 IMU_TOPIC="${IMU_TOPIC:-$CFG_IMU}"
+
+# RViz on/off resolved to a roslaunch boolean
+RVIZ_ARG=false; [[ "$USE_RVIZ" == "1" ]] && RVIZ_ARG=true
 
 echo "Input           : $DATASET_HOST_PATH"
 echo "Output dir      : $BAG_OUTPUT_HOST"
@@ -113,6 +134,8 @@ docker run -it --rm \
   -e DISPLAY=$DISPLAY \
   -e ROS_HOME=/tmp/.ros \
   -e SENSOR="$SENSOR" \
+  -e USE_RVIZ="$USE_RVIZ" \
+  -e LIBGL_ALWAYS_SOFTWARE="$LIBGL_ENV" \
   -e LAUNCH_FILE="$LAUNCH_FILE" \
   -e CFG_LIDAR="$CFG_LIDAR" \
   -e CFG_IMU="$CFG_IMU" \
@@ -172,8 +195,8 @@ roscore
 source /opt/ros/noetic/setup.bash
 source /ros_ws/devel/setup.bash
 rosparam set /use_sim_time true
-echo "[voxel_slam] launching '"$LAUNCH_FILE"' ..."
-roslaunch voxel_slam '"$LAUNCH_FILE"'
+echo "[voxel_slam] launching '"$LAUNCH_FILE"' (rviz='"$RVIZ_ARG"') ..."
+roslaunch voxel_slam '"$LAUNCH_FILE"' rviz:='"$RVIZ_ARG"'
 '\'' C-m
 
     # ---------- PANE 2: rosbag record ----------
@@ -193,9 +216,8 @@ echo "[record] exit"
 source /opt/ros/noetic/setup.bash
 source /ros_ws/devel/setup.bash
 echo "[play] start"
-rosbag play --clock $ROS1_BAG $REMAP_ARGS
+rosbag play --clock $ROS1_BAG $REMAP_ARGS; tmux wait-for -S BAG_DONE;
 echo "[play] done"
-tmux wait-for -S BAG_DONE
 '\'' C-m
 
     # ---------- PANE 4: diagnostics ----------
@@ -226,16 +248,18 @@ echo "  rostopic list"
 echo "  rosrun tf tf_echo /camera_init /aft_mapped"
 '\'' C-m
 
-    # ---------- Control window ----------
+    # ---------- Control window (window 1) ----------
+    # This is the window the user attaches to; the 5 noisy panes are on window 0
+    # pane to signal end of playback, then tears the whole session down.
     tmux new-window -t '"$TMUX_SESSION"' -n control '\''
 source /opt/ros/noetic/setup.bash
 source /ros_ws/devel/setup.bash
-echo "[control] waiting for bag playback to finish"
+echo "[control] waiting for bag playback to finish..."
 tmux wait-for BAG_DONE
 echo "[control] bag playback finished — shutting down"
 
 # Give Voxel-SLAM a moment to process remaining queued scans
-sleep 5
+sleep 3
 
 # Graceful stop: Ctrl+C to each pane
 # Pane layout: 0=roscore, 1=voxel_slam+rviz, 2=recorder, 3=play, 4=diag
@@ -247,11 +271,12 @@ sleep 1
 tmux send-keys -t '"$TMUX_SESSION"':0.0 C-c
 sleep 3
 
+# Force-kill by process name
 echo "[control] force-killing remaining processes..."
-pkill -9 voxelslam   2>/dev/null || true
-pkill -9 rviz        2>/dev/null || true
-pkill -9 rosmaster   2>/dev/null || true
-pkill -9 rosout      2>/dev/null || true
+pkill -9 voxelslam 2>/dev/null || true
+pkill -9 rviz      2>/dev/null || true
+pkill -9 rosmaster 2>/dev/null || true
+pkill -9 rosout    2>/dev/null || true
 sleep 1
 
 echo "[control] terminating tmux"
