@@ -1,3 +1,11 @@
+## Hint
+
+Please change branch to [Bunker-DVI-Dataset-reg-1](https://github.com/MapsHD/benchmark-Voxel-SLAM-to-HDMapping/tree/Bunker-DVI-Dataset-reg-1) for quick experiment.
+
+## Example Dataset:
+
+Download the dataset from [Bunker DVI Dataset](https://charleshamesse.github.io/bunker-dvi-dataset/)
+
 # benchmark-Voxel-SLAM-to-HDMapping
 
 Runs the [Voxel-SLAM](https://github.com/hku-mars/Voxel-SLAM) LiDAR-Inertial
