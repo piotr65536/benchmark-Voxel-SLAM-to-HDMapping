@@ -24,9 +24,15 @@ cd ~/hdmapping-benchmark/data
 ~/hdmapping-benchmark/benchmark-Voxel-SLAM-to-HDMapping/docker_session_run-ros1-voxelslam.sh reg-1.bag-pc.bag .
 ```
 
+While the bag plays you can watch Voxel-SLAM build the map live in RViz:
+
+![Voxel-SLAM running in RViz](images/Voxel-SLAM_RVIZ.png)
+
 ## Step 4 (Open and visualize data)
 Expected data should appear in `~/hdmapping-benchmark/data/output_hdmapping-Voxel-SLAM`.
 Use tool [multi_view_tls_registration_step_2](https://github.com/MapsHD/HDMapping) to open `session.json` from `~/hdmapping-benchmark/data/output_hdmapping-Voxel-SLAM`.
+
+![Voxel-SLAM session opened in HDMapping multi_view_tls_registration_step_2](images/Voxel-SLAM_HDMAPPING_step2.png)
 
 You should see the following data in folder `~/hdmapping-benchmark/data/output_hdmapping-Voxel-SLAM`:
 
